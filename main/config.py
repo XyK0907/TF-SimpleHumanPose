@@ -6,18 +6,22 @@ import numpy as np
 class Config:
     
     ## dataset
-    dataset = 'COCO' # 'COCO', 'PoseTrack', 'MPII'
+    dataset = 'JTA' # 'COCO', 'PoseTrack', 'MPII'
     testset = 'val' # train, test, val (there is no validation set for MPII)
+    additional_name = 'original'
 
     ## directory
     cur_dir = osp.dirname(os.path.abspath(__file__))
     root_dir = osp.join(cur_dir, '..')
     data_dir = osp.join(root_dir, 'data')
-    output_dir = osp.join(root_dir, 'output')
-    model_dump_dir = osp.join(output_dir, 'model_dump', dataset)
-    vis_dir = osp.join(output_dir, 'vis', dataset)
-    log_dir = osp.join(output_dir, 'log', dataset)
-    result_dir = osp.join(output_dir, 'result', dataset)
+    output_dir = '/net/merkur/storage/deeplearning/users/blaand/data/jta_to_real/detection/'
+    # output_dir = osp.join(root_dir, 'output')
+    model_dump_dir = osp.join(output_dir, 'model_dump', dataset,additional_name)
+    vis_dir = osp.join(output_dir, 'vis', dataset,additional_name)
+    log_dir = osp.join(output_dir, 'log', dataset,additional_name)
+    result_dir = osp.join(output_dir, 'result', dataset,additional_name)
+    summary_dir = osp.join(output_dir, 'tensorboard', dataset,additional_name)
+
  
     ## model setting
     backbone = 'resnet50' # 'resnet50', 'resnet101', 'resnet152'
@@ -34,7 +38,7 @@ class Config:
 
     ## training config
     lr_dec_epoch = [90, 120]
-    end_epoch = 140
+    end_epoch = 25
     lr = 5e-4
     lr_dec_factor = 10
     optimizer = 'adam'
@@ -43,6 +47,10 @@ class Config:
     batch_size = 32
     scale_factor = 0.3
     rotation_factor = 40
+
+    # user defined
+    save_summary_steps = 300
+
 
     ## testing config
     useGTbbox = False
@@ -92,6 +100,7 @@ make_dir(cfg.model_dump_dir)
 make_dir(cfg.vis_dir)
 make_dir(cfg.log_dir)
 make_dir(cfg.result_dir)
+make_dir(cfg.summary_dir)
 
 from dataset import dbcfg
 cfg.num_kps = dbcfg.num_kps
