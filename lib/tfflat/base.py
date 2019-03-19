@@ -67,12 +67,18 @@ class ModelDesc(object):
                     assert v.get_shape().as_list() == [], \
                         "Summary tensor only supports scalar but got {}".format(v.get_shape().as_list())
                 tf.add_to_collection(name, v)
+
+                # add tensorboard summary
+                tf.summary.scalar(name,v)
         else:
             if vars.get_shape() == None:
                 print('Summary tensor {} got an unknown shape.'.format(name))
             else:
                 assert vars.get_shape().as_list() == [], \
                     "Summary tensor only supports scalar but got {}".format(vars.get_shape().as_list())
+
+                # add tensorboard summary
+                tf.summary.scalar(name,vars)
             tf.add_to_collection(name, vars)
         self._tower_summary.append([name, reduced_method])
 
@@ -185,6 +191,8 @@ class Base(object):
 class Trainer(Base):
     def __init__(self, net, cfg, data_iter=None):
         self.lr_eval = cfg.lr
+        self.save_summary_steps = cfg.save_summary_steps
+        self.summary_dir = cfg.summary_dir
         self.lr = tf.Variable(cfg.lr, trainable=False)
         self._optimizer = get_optimizer(self.lr, cfg.optimizer)
 
@@ -270,7 +278,13 @@ class Trainer(Base):
         return train_op
 
     def train(self):
-        
+
+        # summaries
+        # merge all summaries, run this operation later in order to retain the added summaries
+        merged_sums = tf.summary.merge_all()
+        writer = tf.summary.FileWriter(self.summary_dir,self.sess.graph)
+
+
         # saver
         self.logger.info('Initialize saver ...')
         train_saver = Saver(self.sess, tf.global_variables(), self.cfg.model_dump_dir)
@@ -302,9 +316,13 @@ class Trainer(Base):
 
             # train one step
             self.gpu_timer.tic()
-            _, self.lr_eval, *summary_res = self.sess.run(
-                [self.graph_ops[0], self.lr, *self.summary_dict.values()], feed_dict=feed_dict)
+            _, self.lr_eval, *summary_res, tb_summaries = self.sess.run(
+                [self.graph_ops[0], self.lr, *self.summary_dict.values(),merged_sums], feed_dict=feed_dict)
             self.gpu_timer.toc()
+
+            # write summary values to event file at disk
+            if itr % self.save_summary_steps == 0:
+                writer.add_summary(tb_summaries,itr)
 
             itr_summary = dict()
             for i, k in enumerate(self.summary_dict.keys()):
