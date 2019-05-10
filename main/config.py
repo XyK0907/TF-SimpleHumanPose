@@ -7,14 +7,14 @@ class Config:
     
     ## dataset
     dataset = 'JTA' # 'COCO', 'PoseTrack', 'MPII'
-    testset = 'val' # train, test, val (there is no validation set for MPII)
-    additional_name = 'original'
+    testset = 'test' # train, test, val (there is no validation set for MPII)
+    additional_name = 'hard_shortcut'
 
     ## directory
     cur_dir = osp.dirname(os.path.abspath(__file__))
     root_dir = osp.join(cur_dir, '..')
     data_dir = osp.join(root_dir, 'data')
-    output_dir = '/net/merkur/storage/deeplearning/users/blaand/data/jta_to_real/detection/'
+    output_dir = '/net/merkur/storage/deeplearning/users/blaand/data/jta_to_real/detection'
     # output_dir = osp.join(root_dir, 'output')
     model_dump_dir = osp.join(output_dir, 'model_dump', dataset,additional_name)
     vis_dir = osp.join(output_dir, 'vis', dataset,additional_name)
@@ -38,7 +38,7 @@ class Config:
 
     ## training config
     lr_dec_epoch = [90, 120]
-    end_epoch = 25
+    end_epoch = 16
     lr = 5e-4
     lr_dec_factor = 10
     optimizer = 'adam'

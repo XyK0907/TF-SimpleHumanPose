@@ -23,7 +23,7 @@ from gen_batch import generate_batch
 from dataset import Dataset
 from nms.nms import oks_nms
 
-def test_net(tester, dets, det_range, gpu_id):
+def test_net(tester, dets, det_range, gpu_id,sigmas):
 
     dump_results = []
 
@@ -139,14 +139,14 @@ def test_net(tester, dets, det_range, gpu_id):
         kps_result = kps_result.reshape(-1,cfg.num_kps*3)
        
         # rescoring and oks nms
-        if cfg.dataset == 'COCO':
+        if cfg.dataset == 'COCO' or cfg.dataset == 'JTA':
             rescored_score = np.zeros((len(score_result)))
             for i in range(len(score_result)):
                 score_mask = score_result[i] > cfg.score_thr
                 if np.sum(score_mask) > 0:
                     rescored_score[i] = np.mean(score_result[i][score_mask]) * cropped_data[i]['score']
             score_result = rescored_score
-            keep = oks_nms(kps_result, score_result, area_save, cfg.oks_nms_thr)
+            keep = oks_nms(kps_result, score_result, area_save, cfg.oks_nms_thr,sigmas)
             if len(keep) > 0 :
                 kps_result = kps_result[keep,:]
                 score_result = score_result[keep]
@@ -160,7 +160,7 @@ def test_net(tester, dets, det_range, gpu_id):
         
         # save result
         for i in range(len(kps_result)):
-            if cfg.dataset == 'COCO':
+            if cfg.dataset == 'COCO' or cfg.dataset == 'JTA':
                 result = dict(image_id=im_info['image_id'], category_id=1, score=float(round(score_result[i], 4)),
                              keypoints=kps_result[i].round(3).tolist())
             elif cfg.dataset == 'PoseTrack':
@@ -169,7 +169,9 @@ def test_net(tester, dets, det_range, gpu_id):
             elif cfg.dataset == 'MPII':
                 result = dict(image_id=im_info['image_id'], scores=score_result[i].round(4).tolist(),
                               keypoints=kps_result[i].round(3).tolist())
-
+            # elif cfg.dataset == 'JTA':
+            #     result = dict(image_id=im_info['image_id'],category_id=1, scores=score_result[i].round(4).tolist(),
+            #                   keypoints=kps_result[i].round(3).tolist())
             dump_results.append(result)
 
     return dump_results
@@ -223,7 +225,7 @@ def test(test_model):
         tester = Tester(Model(), cfg)
         tester.load_weights(test_model)
         range = [ranges[gpu_id], ranges[gpu_id + 1]]
-        return test_net(tester, dets, range, gpu_id)
+        return test_net(tester, dets, range, gpu_id,d.sigmas)
 
     MultiGPUFunc = MultiProc(len(args.gpu_ids.split(',')), func)
     result = MultiGPUFunc.work()
