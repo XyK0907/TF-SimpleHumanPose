@@ -13,3 +13,6 @@ output/
 data/JTA/
 lib/nms/cpu_nms.c*
 lib/nms/gpu_nms.c*
+
+# 
+*.idea
