@@ -19,13 +19,13 @@ def get_variables_in_checkpoint_file(file_name):
                 "with SNAPPY.")
 
 class Saver(object):
-    def __init__(self, sess, var_list, model_dump_dir, name_prefix='snapshot'):
+    def __init__(self, sess, var_list, model_dump_dir, name_prefix='snapshot',max_to_keep=100000):
         self.sess = sess
         self.var_list = var_list
         self.model_dump_dir = model_dump_dir
         self._name_prefix = name_prefix
         
-        self.saver = tf.train.Saver(var_list=var_list, max_to_keep=100000)
+        self.saver = tf.train.Saver(var_list=var_list, max_to_keep=max_to_keep)
 
     def save_model(self, iter):
         filename = '{}_{:d}'.format(self._name_prefix, iter) + '.ckpt'

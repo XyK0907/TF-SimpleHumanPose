@@ -289,6 +289,12 @@ class Trainer(Base):
         self.logger.info('Initialize saver ...')
         train_saver = Saver(self.sess, tf.global_variables(), self.cfg.model_dump_dir)
 
+        best_model_dir = os.path.join(self.cfg.model_dump_dir,"best_model")
+        if not os.path.isdir(best_model_dir):
+            os.makedirs(best_model_dir)
+
+        best_saver = Saver(self.sess,tf.global_variables(),best_model_dir,max_to_keep=1)
+
         # initialize weights
         self.logger.info('Initialize all variables ...')
         self.sess.run(tf.variables_initializer(tf.global_variables(), name='init'))
@@ -297,6 +303,7 @@ class Trainer(Base):
         self.logger.info('Start training ...')
         start_itr = self.cur_epoch * self.itr_per_epoch + 1
         end_itr = self.itr_per_epoch * self.cfg.end_epoch + 1
+        best_loss = self.cfg.min_save_loss
         for itr in range(start_itr, end_itr):
             self.tot_timer.tic()
 
@@ -341,6 +348,13 @@ class Trainer(Base):
             #TODO(display stall?)
             if itr % self.cfg.display == 0:
                 self.logger.info(' '.join(screen))
+
+            # save best model
+            loss = itr_summary['loss']
+            if loss < best_loss:
+                best_loss = loss
+                print("Saving model because best loss was undergone; Value is {}.".format(loss))
+                best_saver.save_model(self.cfg.end_epoch + 1)
 
             if itr % self.itr_per_epoch == 0:
                 train_saver.save_model(self.cur_epoch)

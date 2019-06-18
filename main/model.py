@@ -74,6 +74,25 @@ class Model(ModelDesc):
             gt_heatmap = tf.stop_gradient(self.render_gaussian_heatmap(target_coord, cfg.output_shape, cfg.sigma))
             valid_mask = tf.reshape(valid, [cfg.batch_size, 1, 1, cfg.num_kps])
             loss = tf.reduce_mean(tf.square(heatmap_outs - gt_heatmap) * valid_mask)
+            tf.summary.image("input_images",image,max_outputs=5)
+
+            gt_summary = []
+            unstacked_gt_heatmaps = tf.unstack(gt_heatmap,axis=3)
+            for nr,hm in enumerate(unstacked_gt_heatmaps):
+                hm=tf.expand_dims(hm,axis=-1)
+                gt_summary.append(tf.summary.image("{}th keypoints' groundtruth heatmaps".format(nr+1),hm,max_outputs=5))
+
+            tf.summary.merge(gt_summary)
+
+
+            pred_summary = []
+            unstacked_pred_heatmaps = tf.unstack(heatmap_outs,axis=3)
+            for nr,hm in enumerate(unstacked_pred_heatmaps):
+                hm = tf.expand_dims(hm, axis=-1)
+                pred_summary.append(tf.summary.image("{}th keypoints' predicted heatmaps".format(nr+1),hm,max_outputs=5))
+
+            tf.summary.merge(pred_summary)
+
             self.add_tower_summary('loss', loss)
             self.set_loss(loss)
         else:

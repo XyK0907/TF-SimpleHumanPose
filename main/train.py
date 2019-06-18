@@ -1,6 +1,12 @@
 import tensorflow as tf
 import argparse
 import numpy as np
+#set random seed for the numpy pseudo random number generator in order to obtain comparable results
+np.random.seed(2223)
+
+import random
+#set random seed for the python pseudo random number generator in order to obtain comparable results
+random.seed(2223)
 
 from model import Model
 from config import cfg

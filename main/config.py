@@ -8,7 +8,15 @@ class Config:
     ## dataset
     dataset = 'JTA' # 'COCO', 'PoseTrack', 'MPII'
     testset = 'test' # train, test, val (there is no validation set for MPII)
-    additional_name = 'hard_shortcut'
+    # additional_name = 'SyMPose_urban2worldexpo_standard_cyclegan_bs1_gfdim32_dfdim64_start2019-06-13-19-54-19'
+    # additional_name = 'SyMPose_urban2iosb_standard_cyclegan_bs1_gfdim32_dfdim64_start2019-06-17-09-11-54'
+    additional_name = "SyMPose_urban2iosb_standard_cyclegan_bs1_gfdim32_dfdim64_start2019-06-17-09-11-54"
+    # additional_name = 'SyMPose_urban2iosb_spade_cyclegan_bs1_gfdim32_dfdim64_start2019-06-13-12-16-01'
+    # additional_name = "SyMPose_urban2worldexpo_lr_sched_standard_cyclegan_bs1_gfdim32_dfdim64_start2019-06-13-19-54-19"
+    # additional_name = "SyMPose_urban2worldexpo_spade_cyclegan_bs1_gfdim32_dfdim64_start2019-06-13-09-47-28"
+    # additional_name = 'SyMPose_urban2cityscapes_standard_cyclegan_bs1_gfdim32_dfdim64_start2019-06-14-13-18-27'
+    # additional_name = 'SyMPose'
+    # additional_name = "SyMPose_green"
 
     ## directory
     cur_dir = osp.dirname(os.path.abspath(__file__))
@@ -37,8 +45,8 @@ class Config:
     pixel_means = np.array([[[123.68, 116.78, 103.94]]])
 
     ## training config
-    lr_dec_epoch = [90, 120]
-    end_epoch = 16
+    lr_dec_epoch = [3, 12]
+    end_epoch = 15
     lr = 5e-4
     lr_dec_factor = 10
     optimizer = 'adam'
@@ -47,17 +55,18 @@ class Config:
     batch_size = 32
     scale_factor = 0.3
     rotation_factor = 40
+    min_save_loss = 70
 
     # user defined
     save_summary_steps = 300
 
 
     ## testing config
-    useGTbbox = False
+    useGTbbox = True
     flip_test = True
     oks_nms_thr = 0.9
     score_thr = 0.2
-    test_batch_size = 32
+    test_batch_size = 1
 
     ## others
     multi_thread_enable = True

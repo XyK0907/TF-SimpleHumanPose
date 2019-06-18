@@ -122,8 +122,8 @@ def test_net(tester, dets, det_range, gpu_id,sigmas):
                 area_save[image_id] = (crop_infos[image_id - start_id][2] - crop_infos[image_id - start_id][0]) * (crop_infos[image_id - start_id][3] - crop_infos[image_id - start_id][1])
                 
         #vis
-        vis = False
-        if vis and np.any(kps_result[:,:,2] > 0.9):
+        vis = True
+        if vis and np.any(kps_result[:,:,2] > 0.1):
             tmpimg = cv2.imread(os.path.join(cfg.img_path, cropped_data[0]['imgpath']))
             tmpimg = tmpimg.astype('uint8')
             for i in range(len(kps_result)):
