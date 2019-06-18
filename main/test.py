@@ -177,7 +177,7 @@ def test_net(tester, dets, det_range, gpu_id,sigmas):
     return dump_results
 
 
-def test(test_model):
+def test(test_model,data_iter=None):
     
     # annotation load
     d = Dataset()
@@ -223,6 +223,7 @@ def test(test_model):
     def func(gpu_id):
         cfg.set_args(args.gpu_ids.split(',')[gpu_id])
         tester = Tester(Model(), cfg)
+        # fixme add here validated sets as soon as validation models have been trained
         tester.load_weights(test_model)
         range = [ranges[gpu_id], ranges[gpu_id + 1]]
         return test_net(tester, dets, range, gpu_id,d.sigmas)

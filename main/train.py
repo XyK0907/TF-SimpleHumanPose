@@ -1,12 +1,8 @@
 import tensorflow as tf
 import argparse
 import numpy as np
-#set random seed for the numpy pseudo random number generator in order to obtain comparable results
-np.random.seed(2223)
-
-import random
-#set random seed for the python pseudo random number generator in order to obtain comparable results
-random.seed(2223)
+# #set random seed for the numpy pseudo random number generator in order to obtain comparable results
+# np.random.seed(2223)
 
 from model import Model
 from config import cfg
@@ -18,6 +14,7 @@ def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument('--gpu', type=str, dest='gpu_ids')
     parser.add_argument('--continue', dest='continue_train', action='store_true')
+    parser.add_argument("--cnt_val_it",type=int,dest="cnt_val_itr",default=-1)
     args = parser.parse_args()
 
     if not args.gpu_ids:
@@ -32,7 +29,7 @@ def parse_args():
     return args
 args = parse_args()
 
-cfg.set_args(args.gpu_ids, args.continue_train)
+cfg.set_args(args.gpu_ids, args.cnt_val_itr,args.continue_train)
 trainer = Trainer(Model(), cfg)
 trainer.train()
 

@@ -10,13 +10,14 @@ class Config:
     testset = 'test' # train, test, val (there is no validation set for MPII)
     # additional_name = 'SyMPose_urban2worldexpo_standard_cyclegan_bs1_gfdim32_dfdim64_start2019-06-13-19-54-19'
     # additional_name = 'SyMPose_urban2iosb_standard_cyclegan_bs1_gfdim32_dfdim64_start2019-06-17-09-11-54'
-    additional_name = "SyMPose_urban2iosb_standard_cyclegan_bs1_gfdim32_dfdim64_start2019-06-17-09-11-54"
+    # additional_name = "SyMPose_urban2iosb_standard_cyclegan_bs1_gfdim32_dfdim64_start2019-06-17-09-11-54"
     # additional_name = 'SyMPose_urban2iosb_spade_cyclegan_bs1_gfdim32_dfdim64_start2019-06-13-12-16-01'
     # additional_name = "SyMPose_urban2worldexpo_lr_sched_standard_cyclegan_bs1_gfdim32_dfdim64_start2019-06-13-19-54-19"
     # additional_name = "SyMPose_urban2worldexpo_spade_cyclegan_bs1_gfdim32_dfdim64_start2019-06-13-09-47-28"
     # additional_name = 'SyMPose_urban2cityscapes_standard_cyclegan_bs1_gfdim32_dfdim64_start2019-06-14-13-18-27'
     # additional_name = 'SyMPose'
     # additional_name = "SyMPose_green"
+    additional_name="SyMPose2X_test"
 
     ## directory
     cur_dir = osp.dirname(os.path.abspath(__file__))
@@ -56,6 +57,7 @@ class Config:
     scale_factor = 0.3
     rotation_factor = 40
     min_save_loss = 70
+    equal_random_seed =True
 
     # user defined
     save_summary_steps = 300
@@ -92,10 +94,11 @@ class Config:
     def denormalize_input(self, img):
         return img + self.pixel_means
 
-    def set_args(self, gpu_ids, continue_train=False):
+    def set_args(self, gpu_ids, cnt_val_itr,continue_train=False):
         self.gpu_ids = gpu_ids
         self.num_gpus = len(self.gpu_ids.split(','))
         self.continue_train = continue_train
+        self.cnt_val_itr = cnt_val_itr
         os.environ["CUDA_VISIBLE_DEVICES"] = self.gpu_ids
         print('>>> Using /gpu:{}'.format(self.gpu_ids))
 

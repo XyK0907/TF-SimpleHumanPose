@@ -8,6 +8,7 @@ import os.path as osp
 import glob
 import abc
 import math
+import random
 
 from .net_utils import average_gradients, aggregate_batch, get_optimizer, get_tower_summary_dict
 from .saver import load_model, Saver
@@ -109,6 +110,8 @@ class Base(object):
         self.net = net
         self.cfg = cfg
 
+        self._optimizer = None
+
         self.cur_epoch = 0
 
         self.summary_dict = {}
@@ -122,12 +125,15 @@ class Base(object):
         self.logger = colorlogger(cfg.log_dir, log_name=log_name)
 
         # initialize tensorflow
-        tfconfig = tf.ConfigProto(allow_soft_placement=True, log_device_placement=False)
-        tfconfig.gpu_options.allow_growth = True
-        self.sess = tf.Session(config=tfconfig)
+        self.tfconfig = tf.ConfigProto(allow_soft_placement=True, log_device_placement=False)
+        self.tfconfig.gpu_options.allow_growth = True
 
-        # build_graph
-        self.build_graph()
+        # only use this session for test
+        if isinstance(self,Tester):
+            self.sess = tf.Session(config=self.tfconfig)
+
+            # build_graph
+            self.build_graph()
 
         # get data iter
         self._data_iter = data_iter
@@ -149,10 +155,18 @@ class Base(object):
                 self.graph_ops = [self.graph_ops]
         self.summary_dict.update( get_tower_summary_dict(self.net._tower_summary) )
 
-    def load_weights(self, model=None):
+    def load_weights(self,model=None,model_dump_dir=None,sess=None):
+
+        if isinstance(self,Trainer):
+            assert sess is not None
+        else:
+            assert sess is None
+
+        load_dir = self.cfg.model_dump_dir if model_dump_dir is None else model_dump_dir
+        used_sess = self.sess if sess is None else sess
 
         if model == 'last_epoch':
-            sfiles = os.path.join(self.cfg.model_dump_dir, 'snapshot_*.ckpt.meta')
+            sfiles = os.path.join(load_dir, 'snapshot_*.ckpt.meta')
             sfiles = glob.glob(sfiles)
             if len(sfiles) > 0:
                 sfiles.sort(key=os.path.getmtime)
@@ -163,23 +177,23 @@ class Base(object):
                 return
 
         if isinstance(model, int):
-            model = os.path.join(self.cfg.model_dump_dir, 'snapshot_%d.ckpt' % model)
+            model = os.path.join(load_dir, 'snapshot_%d.ckpt' % model)
 
         if isinstance(model, str) and (osp.exists(model + '.meta') or osp.exists(model)):
             self.logger.info('Initialized model weights from {} ...'.format(model))
-            load_model(self.sess, model)
+            load_model(used_sess, model)
             if model.split('/')[-1].startswith('snapshot_'):
                 self.cur_epoch = int(model[model.find('snapshot_')+9:model.find('.ckpt')])
                 self.logger.info('Current epoch is %d.' % self.cur_epoch)
         else:
             self.logger.critical('Load nothing. There is no model in path {}.'.format(model))
 
-    def next_feed(self):
-        if self._data_iter is None:
+    def next_feed(self,data_iter):
+        if self._data_iter is None and data_iter is None:
             raise ValueError('No input data.')
         feed_dict = dict()
         for inputs in self._input_list:
-            blobs = next(self._data_iter)
+            blobs = next(data_iter)
             for i, inp in enumerate(inputs):
                 inp_shape = inp.get_shape().as_list()
                 if None in inp_shape:
@@ -190,17 +204,22 @@ class Base(object):
 
 class Trainer(Base):
     def __init__(self, net, cfg, data_iter=None):
-        self.lr_eval = cfg.lr
-        self.save_summary_steps = cfg.save_summary_steps
-        self.summary_dir = cfg.summary_dir
-        self.lr = tf.Variable(cfg.lr, trainable=False)
-        self._optimizer = get_optimizer(self.lr, cfg.optimizer)
+        from dataset import Dataset
+        # self.lr_eval = cfg.lr
+        # self.save_summary_steps = cfg.save_summary_steps
+        # self.summary_dir = cfg.summary_dir
+        # self.lr = tf.Variable(cfg.lr, trainable=False)
+        # self._optimizer = get_optimizer(self.lr, cfg.optimizer)
 
         super(Trainer, self).__init__(net, cfg, data_iter, log_name='train_logs.txt')
 
         # make data
-        self._data_iter, self.itr_per_epoch = self._make_data()
-    
+        # fixme this has to be applied from inside thhe training loop
+        self.d = Dataset()
+        # self._data_iter, self.itr_per_epoch = self._make_data()
+        if self.cfg.cnt_val_itr >= self.d.num_val_split:
+            raise ValueError("The validation iteration to continue is larger than overall number of cross-validation runs!")
+
     def _make_data(self):
         from dataset import Dataset
         from gen_batch import generate_batch
@@ -209,19 +228,22 @@ class Trainer(Base):
         train_data = d.load_train_data()
         
         from tfflat.data_provider import DataFromList, MultiProcessMapDataZMQ, BatchData, MapData
-        data_load_thread = DataFromList(train_data)
+        self.data_load_thread = DataFromList(train_data)
         if self.cfg.multi_thread_enable:
-            data_load_thread = MultiProcessMapDataZMQ(data_load_thread, self.cfg.num_thread, generate_batch, strict=True)
+            data_load_thread = MultiProcessMapDataZMQ(self.data_load_thread, self.cfg.num_thread, generate_batch, strict=True)
         else:
-            data_load_thread = MapData(data_load_thread, generate_batch)
+            data_load_thread = MapData(self.data_load_thread, generate_batch)
         data_load_thread = BatchData(data_load_thread, self.cfg.batch_size)
 
-        data_load_thread.reset_state()
+        self.data_load_thread.reset_state()
         dataiter = data_load_thread.get_data()
 
-        return dataiter, math.ceil(len(train_data)/self.cfg.batch_size/self.cfg.num_gpus) 
+        return dataiter, math.ceil(len(train_data)/self.cfg.batch_size/self.cfg.num_gpus)
 
     def _make_graph(self):
+
+        assert self._optimizer is not None
+
         self.logger.info("Generating training graph on {} GPUs ...".format(self.cfg.num_gpus))
 
         weights_initializer = slim.xavier_initializer()
@@ -278,88 +300,165 @@ class Trainer(Base):
         return train_op
 
     def train(self):
+        from gen_batch import generate_batch
+        from tfflat.data_provider import  DataFromList, MultiProcessMapDataZMQ, BatchData, MapData
+        from test import test
 
-        # summaries
-        # merge all summaries, run this operation later in order to retain the added summaries
-        merged_sums = tf.summary.merge_all()
-        writer = tf.summary.FileWriter(self.summary_dir,self.sess.graph)
+        start_val_itr = self.cfg.cnt_val_itr if self.cfg.cnt_val_itr >= 0 else 0
+
+        for out_itr in range(start_val_itr,self.d.num_val_split):
+            # reset input and output lists
+            self._input_list = []
+            self._output_list = []
+            self._outputs = []
+            self.graph_ops = None
+
+            # reset current epoch
+            self.cur_epoch = 0
 
 
-        # saver
-        self.logger.info('Initialize saver ...')
-        train_saver = Saver(self.sess, tf.global_variables(), self.cfg.model_dump_dir)
+            #reset summary dict
+            self.summary_dict = {}
 
-        best_model_dir = os.path.join(self.cfg.model_dump_dir,"best_model")
-        if not os.path.isdir(best_model_dir):
-            os.makedirs(best_model_dir)
+            # timer
+            self.tot_timer = Timer()
+            self.gpu_timer = Timer()
+            self.read_timer = Timer()
 
-        best_saver = Saver(self.sess,tf.global_variables(),best_model_dir,max_to_keep=1)
+            run_pref = "run_{}".format(out_itr + 1)
+            lr_eval = self.cfg.lr
+            save_summary_steps = self.cfg.save_summary_steps
+            summary_dir = os.path.join(self.cfg.summary_dir, run_pref)
+            train_data, val_data = self.d.load_train_data(out_itr)
 
-        # initialize weights
-        self.logger.info('Initialize all variables ...')
-        self.sess.run(tf.variables_initializer(tf.global_variables(), name='init'))
-        self.load_weights('last_epoch' if self.cfg.continue_train else self.cfg.init_model)
 
-        self.logger.info('Start training ...')
-        start_itr = self.cur_epoch * self.itr_per_epoch + 1
-        end_itr = self.itr_per_epoch * self.cfg.end_epoch + 1
-        best_loss = self.cfg.min_save_loss
-        for itr in range(start_itr, end_itr):
-            self.tot_timer.tic()
 
-            self.cur_epoch = itr // self.itr_per_epoch
-            setproctitle.setproctitle('train epoch:' + str(self.cur_epoch))
+            with tf.Session(config=self.tfconfig) as sess:
 
-            # apply current learning policy
-            cur_lr = self.cfg.get_lr(self.cur_epoch)
-            if not approx_equal(cur_lr, self.lr_eval):
-                print(self.lr_eval, cur_lr)
-                self.sess.run(tf.assign(self.lr, cur_lr))
+                lr = tf.Variable(self.cfg.lr, trainable=False)
+                self._optimizer = get_optimizer(lr, self.cfg.optimizer)
 
-            # input data
-            self.read_timer.tic()
-            feed_dict = self.next_feed()
-            self.read_timer.toc()
 
-            # train one step
-            self.gpu_timer.tic()
-            _, self.lr_eval, *summary_res, tb_summaries = self.sess.run(
-                [self.graph_ops[0], self.lr, *self.summary_dict.values(),merged_sums], feed_dict=feed_dict)
-            self.gpu_timer.toc()
+                if self.cfg.equal_random_seed:
+                    # set random seed for the python pseudo random number generator in order to obtain comparable results
+                    tf.set_random_seed(2223)
+                    random.seed(2223)
 
-            # write summary values to event file at disk
-            if itr % self.save_summary_steps == 0:
-                writer.add_summary(tb_summaries,itr)
+                # build_graph
+                self.build_graph()
 
-            itr_summary = dict()
-            for i, k in enumerate(self.summary_dict.keys()):
-                itr_summary[k] = summary_res[i]
+                data_load_thread = DataFromList(train_data)
+                if self.cfg.multi_thread_enable:
+                    data_thread = MultiProcessMapDataZMQ(data_load_thread, self.cfg.num_thread, generate_batch, strict=True)
+                else:
+                    data_thread = MapData(data_load_thread, generate_batch)
+                data_load_thread = BatchData(data_thread, self.cfg.batch_size)
 
-            screen = [
-                'Epoch %d itr %d/%d:' % (self.cur_epoch, itr, self.itr_per_epoch),
-                'lr: %g' % (self.lr_eval),
-                'speed: %.2f(%.2fs r%.2f)s/itr' % (
-                    self.tot_timer.average_time, self.gpu_timer.average_time, self.read_timer.average_time),
-                '%.2fh/epoch' % (self.tot_timer.average_time / 3600. * self.itr_per_epoch),
-                ' '.join(map(lambda x: '%s: %.4f' % (x[0], x[1]), itr_summary.items())),
-            ]
-            
+                if self.cfg.equal_random_seed:
+                    data_load_thread.reset_state()
 
-            #TODO(display stall?)
-            if itr % self.cfg.display == 0:
-                self.logger.info(' '.join(screen))
+                dataiter = data_load_thread.get_data()
+                itr_per_epoch = math.ceil(len(train_data)/self.cfg.batch_size/self.cfg.num_gpus)
 
-            # save best model
-            loss = itr_summary['loss']
-            if loss < best_loss:
-                best_loss = loss
-                print("Saving model because best loss was undergone; Value is {}.".format(loss))
-                best_saver.save_model(self.cfg.end_epoch + 1)
 
-            if itr % self.itr_per_epoch == 0:
-                train_saver.save_model(self.cur_epoch)
 
-            self.tot_timer.toc()
+                # summaries
+                # merge all summaries, run this operation later in order to retain the added summaries
+                merged_sums = tf.summary.merge_all()
+                writer = tf.summary.FileWriter(summary_dir,sess.graph)
+
+
+                # saver
+                self.logger.info('Initialize saver ...')
+                model_dump_dir = os.path.join(self.cfg.model_dump_dir,run_pref)
+                train_saver = Saver(sess, tf.global_variables(), model_dump_dir)
+
+                best_model_dir = os.path.join(model_dump_dir,"best_model")
+                if not os.path.isdir(best_model_dir):
+                    os.makedirs(best_model_dir)
+
+                best_saver = Saver(sess,tf.global_variables(),best_model_dir,max_to_keep=1)
+
+                # initialize weights
+                self.logger.info('Initialize all variables ...')
+                sess.run(tf.variables_initializer(tf.global_variables(), name='init'))
+                #fixme add here the actual cross val number. That number has to be configured via command line if intending to load continue train
+                self.load_weights('last_epoch' if self.cfg.continue_train else self.cfg.init_model,model_dump_dir,sess=sess)
+
+                self.logger.info('Start training; validation iteration #{}...'.format(out_itr))
+                start_itr = self.cur_epoch * itr_per_epoch + 1
+                end_itr = itr_per_epoch * self.cfg.end_epoch + 1
+                best_loss = self.cfg.min_save_loss
+                for itr in range(start_itr, end_itr):
+                    self.tot_timer.tic()
+
+                    self.cur_epoch = itr // itr_per_epoch
+                    setproctitle.setproctitle('val_it {};train epoch{}:'.format(out_itr,self.cur_epoch))
+
+                    # apply current learning policy
+                    cur_lr = self.cfg.get_lr(self.cur_epoch)
+                    if not approx_equal(cur_lr, lr_eval):
+                        print(lr_eval, cur_lr)
+                        sess.run(tf.assign(lr, cur_lr))
+
+                    # input data
+                    self.read_timer.tic()
+                    feed_dict = self.next_feed(dataiter)
+                    self.read_timer.toc()
+
+                    # train one step
+                    self.gpu_timer.tic()
+                    _, lr_eval, *summary_res, tb_summaries = sess.run(
+                        [self.graph_ops[0], lr, *self.summary_dict.values(),merged_sums], feed_dict=feed_dict)
+                    self.gpu_timer.toc()
+
+                    # write summary values to event file at disk
+                    if itr % save_summary_steps == 0:
+                        writer.add_summary(tb_summaries,itr)
+
+                    itr_summary = dict()
+                    for i, k in enumerate(self.summary_dict.keys()):
+                        itr_summary[k] = summary_res[i]
+
+                    screen = [
+                        'Validation itr %d' % (out_itr),
+                        'Epoch %d itr %d/%d:' % (self.cur_epoch, itr, itr_per_epoch),
+                        'lr: %g' % (lr_eval),
+                        'speed: %.2f(%.2fs r%.2f)s/itr' % (
+                            self.tot_timer.average_time, self.gpu_timer.average_time, self.read_timer.average_time),
+                        '%.2fh/epoch' % (self.tot_timer.average_time / 3600. * itr_per_epoch),
+                        ' '.join(map(lambda x: '%s: %.4f' % (x[0], x[1]), itr_summary.items())),
+                    ]
+
+
+                    #TODO(display stall?)
+                    if itr % self.cfg.display == 0:
+                        self.logger.info(' '.join(screen))
+
+                    # save best model
+                    loss = itr_summary['loss']
+                    if loss < best_loss:
+                        best_loss = loss
+                        print("Saving model because best loss was undergone; Value is {}.".format(loss))
+                        best_saver.save_model(self.cfg.end_epoch + 1)
+                        # fixme this is only for test reasons; remove when tesing is over
+                        break
+
+                    if itr % itr_per_epoch == 0:
+                        train_saver.save_model(self.cur_epoch)
+
+                    self.tot_timer.toc()
+
+
+            #clean up
+            sess.close()
+            tf.reset_default_graph()
+            if self.cfg.multi_thread_enable:
+                data_thread.__del__()
+            print("Finish training for val run #{}; Apply validation".format(out_itr + 1))
+           # test(self.cfg.end_epoch + 1)
+
+
 
 class Tester(Base):
     def __init__(self, net, cfg, data_iter=None):
@@ -406,6 +505,8 @@ class Tester(Base):
         return feed_dict, batch_size
 
     def _make_graph(self):
+        # optimizer has to bne None for test mode
+        assert self._optimizer is None
         self.logger.info("Generating testing graph on {} GPUs ...".format(self.cfg.num_gpus))
 
         with tf.variable_scope(tf.get_variable_scope()):

@@ -46,7 +46,6 @@ def get_rng(obj=None):
     Returns:
         np.random.RandomState: the RNG.
     """
-    seed = (id(obj) + os.getpid() +
-            int(datetime.now().strftime("%Y%m%d%H%M%S%f"))) % 4294967295
+    seed = 2223
     return np.random.RandomState(seed)
 
