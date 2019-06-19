@@ -10,14 +10,14 @@ class Config:
     testset = 'test' # train, test, val (there is no validation set for MPII)
     # additional_name = 'SyMPose_urban2worldexpo_standard_cyclegan_bs1_gfdim32_dfdim64_start2019-06-13-19-54-19'
     # additional_name = 'SyMPose_urban2iosb_standard_cyclegan_bs1_gfdim32_dfdim64_start2019-06-17-09-11-54'
-    # additional_name = "SyMPose_urban2iosb_standard_cyclegan_bs1_gfdim32_dfdim64_start2019-06-17-09-11-54"
+    additional_name = "SyMPose_urban2iosb_standard_cyclegan_bs1_gfdim32_dfdim64_start2019-06-17-09-11-54"
     # additional_name = 'SyMPose_urban2iosb_spade_cyclegan_bs1_gfdim32_dfdim64_start2019-06-13-12-16-01'
     # additional_name = "SyMPose_urban2worldexpo_lr_sched_standard_cyclegan_bs1_gfdim32_dfdim64_start2019-06-13-19-54-19"
     # additional_name = "SyMPose_urban2worldexpo_spade_cyclegan_bs1_gfdim32_dfdim64_start2019-06-13-09-47-28"
     # additional_name = 'SyMPose_urban2cityscapes_standard_cyclegan_bs1_gfdim32_dfdim64_start2019-06-14-13-18-27'
-    # additional_name = 'SyMPose'
-    # additional_name = "SyMPose_green"
-    additional_name="SyMPose2X_test"
+    # additional_name = 'SyMPose_urban'
+    # additional_name = "SyMPose_urban2worldexpo_standard_cyclegan_bs1_gfdim32_dfdim64_start2019-06-13-19-54-19"
+    # additional_name="SyMPose2X_test"
 
     ## directory
     cur_dir = osp.dirname(os.path.abspath(__file__))

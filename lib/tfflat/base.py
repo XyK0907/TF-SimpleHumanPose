@@ -441,8 +441,6 @@ class Trainer(Base):
                         best_loss = loss
                         print("Saving model because best loss was undergone; Value is {}.".format(loss))
                         best_saver.save_model(self.cfg.end_epoch + 1)
-                        # fixme this is only for test reasons; remove when tesing is over
-                        break
 
                     if itr % itr_per_epoch == 0:
                         train_saver.save_model(self.cur_epoch)
