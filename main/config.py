@@ -9,14 +9,16 @@ class Config:
     dataset = 'JTA' # 'COCO', 'PoseTrack', 'MPII'
     testset = 'test' # train, test, val (there is no validation set for MPII)
     # additional_name = 'SyMPose_urban2worldexpo_standard_cyclegan_bs1_gfdim32_dfdim64_start2019-06-13-19-54-19'
-    # additional_name = 'SyMPose_urban2iosb_standard_cyclegan_bs1_gfdim32_dfdim64_start2019-06-17-09-11-54'
+    # additional_name = 'SyMPose_urban2iosb_standard_cyclegan_bs1_gfdim32_dfdim64_start2019-06-14-19-40-54_cval'
     # additional_name = "SyMPose_urban2iosb_standard_cyclegan_bs1_gfdim32_dfdim64_start2019-06-17-09-11-54"
-    additional_name = 'SyMPose_urban2iosb_spade_cyclegan_bs1_gfdim32_dfdim64_start2019-06-13-12-16-01'
+    # additional_name = 'SyMPose_urban2iosb_spade_cyclegan_bs1_gfdim32_dfdim64_start2019-06-13-12-16-01'
     # additional_name = "SyMPose_urban2worldexpo_lr_sched_standard_cyclegan_bs1_gfdim32_dfdim64_start2019-06-13-19-54-19"
     # additional_name = "SyMPose_urban2worldexpo_spade_cyclegan_bs1_gfdim32_dfdim64_start2019-06-13-09-47-28"
-    # additional_name = 'SyMPose_urban2cityscapes_standard_cyclegan_bs1_gfdim32_dfdim64_start2019-06-14-13-18-27'
-    # additional_name = 'SyMPose'
-    # additional_name = "SyMPose_green"
+    additional_name = 'SyMPose_urban2cityscapes_standard_cyclegan_bs1_gfdim32_dfdim64_start2019-06-17-09-16-34_cval'
+    # additional_name = 'SyMPose_urban_cval'
+    # additional_name = "SyMPose_urban2worldexpo_standard_cyclegan_bs1_gfdim32_dfdim64_start2019-06-13-19-54-19"
+    # additional_name="SyMPose2X_test"
+    # additional_name = "SyMPose"
 
     ## directory
     cur_dir = osp.dirname(os.path.abspath(__file__))
@@ -29,6 +31,7 @@ class Config:
     log_dir = osp.join(output_dir, 'log', dataset,additional_name)
     result_dir = osp.join(output_dir, 'result', dataset,additional_name)
     summary_dir = osp.join(output_dir, 'tensorboard', dataset,additional_name)
+    val_dir = osp.join(output_dir, 'val', dataset, additional_name)
 
  
     ## model setting
@@ -56,6 +59,7 @@ class Config:
     scale_factor = 0.3
     rotation_factor = 40
     min_save_loss = 70
+    equal_random_seed =True
 
     # user defined
     save_summary_steps = 300
@@ -66,7 +70,7 @@ class Config:
     flip_test = True
     oks_nms_thr = 0.9
     score_thr = 0.2
-    test_batch_size = 1
+    test_batch_size = 32
 
     ## others
     multi_thread_enable = True
@@ -92,10 +96,11 @@ class Config:
     def denormalize_input(self, img):
         return img + self.pixel_means
 
-    def set_args(self, gpu_ids, continue_train=False):
+    def set_args(self, gpu_ids, cnt_val_itr=-1,continue_train=False):
         self.gpu_ids = gpu_ids
         self.num_gpus = len(self.gpu_ids.split(','))
         self.continue_train = continue_train
+        self.cnt_val_itr = cnt_val_itr
         os.environ["CUDA_VISIBLE_DEVICES"] = self.gpu_ids
         print('>>> Using /gpu:{}'.format(self.gpu_ids))
 
