@@ -23,7 +23,7 @@ from gen_batch import generate_batch
 from dataset import Dataset
 from nms.nms import oks_nms
 
-def test_net(tester, dets, det_range, gpu_id,sigmas):
+def test_net(tester, dets, det_range, gpu_id,sigmas,vis_kps):
 
     dump_results = []
 
@@ -122,8 +122,7 @@ def test_net(tester, dets, det_range, gpu_id,sigmas):
                 area_save[image_id] = (crop_infos[image_id - start_id][2] - crop_infos[image_id - start_id][0]) * (crop_infos[image_id - start_id][3] - crop_infos[image_id - start_id][1])
                 
         #vis
-        vis = True
-        if vis and np.any(kps_result[:,:,2] > 0.1):
+        if vis_kps and np.any(kps_result[:,:,2] > 0.8):
             tmpimg = cv2.imread(os.path.join(cfg.img_path, cropped_data[0]['imgpath']))
             tmpimg = tmpimg.astype('uint8')
             for i in range(len(kps_result)):
@@ -177,17 +176,20 @@ def test_net(tester, dets, det_range, gpu_id,sigmas):
     return dump_results
 
 
-def test(test_model,data_iter=None):
+def test(test_model,vis_kps,run_nr):
     
     # annotation load
-    d = Dataset()
+    d = Dataset(train=False)
     annot = d.load_annot(cfg.testset)
     gt_img_id = d.load_imgid(annot)
+    model_dump_dir = osp.join(cfg.model_dump_dir,"run_{}".format(run_nr))
+
+    assert osp.isdir(model_dump_dir)
     
     # human bbox load
     if cfg.useGTbbox and cfg.testset in ['train', 'val']:
         if cfg.testset == 'train':
-            dets = d.load_train_data(score=True)
+            dets = d.load_test_data(score=True)
         else:
             dets = d.load_val_data_with_annot()
         dets.sort(key=lambda x: (x['image_id']))
@@ -223,10 +225,9 @@ def test(test_model,data_iter=None):
     def func(gpu_id):
         cfg.set_args(args.gpu_ids.split(',')[gpu_id])
         tester = Tester(Model(), cfg)
-        # fixme add here validated sets as soon as validation models have been trained
-        tester.load_weights(test_model)
+        tester.load_weights(test_model,model_dump_dir=model_dump_dir)
         range = [ranges[gpu_id], ranges[gpu_id + 1]]
-        return test_net(tester, dets, range, gpu_id,d.sigmas)
+        return test_net(tester, dets, range, gpu_id,d.sigmas,vis_kps)
 
     MultiGPUFunc = MultiProc(len(args.gpu_ids.split(',')), func)
     result = MultiGPUFunc.work()
@@ -239,6 +240,8 @@ if __name__ == '__main__':
         parser = argparse.ArgumentParser()
         parser.add_argument('--gpu', type=str, dest='gpu_ids')
         parser.add_argument('--test_epoch', type=str, dest='test_epoch')
+        parser.add_argument("--vis",dest='vis_kps', action='store_true')
+        parser.add_argument("--run_nr",type=int,default=1,dest="run_nr")
         args = parser.parse_args()
 
         # test gpus
@@ -256,4 +259,4 @@ if __name__ == '__main__':
 
     global args
     args = parse_args()
-    test(int(args.test_epoch))
+    test(int(args.test_epoch),args.vis_kps,args.run_nr)

@@ -9,6 +9,10 @@ import glob
 import abc
 import math
 import random
+import json
+from crowdposetools.coco import COCO
+import time
+import copy
 
 from .net_utils import average_gradients, aggregate_batch, get_optimizer, get_tower_summary_dict
 from .saver import load_model, Saver
@@ -220,25 +224,25 @@ class Trainer(Base):
         if self.cfg.cnt_val_itr >= self.d.num_val_split:
             raise ValueError("The validation iteration to continue is larger than overall number of cross-validation runs!")
 
-    def _make_data(self):
-        from dataset import Dataset
-        from gen_batch import generate_batch
-
-        d = Dataset()
-        train_data = d.load_train_data()
-        
-        from tfflat.data_provider import DataFromList, MultiProcessMapDataZMQ, BatchData, MapData
-        self.data_load_thread = DataFromList(train_data)
-        if self.cfg.multi_thread_enable:
-            data_load_thread = MultiProcessMapDataZMQ(self.data_load_thread, self.cfg.num_thread, generate_batch, strict=True)
-        else:
-            data_load_thread = MapData(self.data_load_thread, generate_batch)
-        data_load_thread = BatchData(data_load_thread, self.cfg.batch_size)
-
-        self.data_load_thread.reset_state()
-        dataiter = data_load_thread.get_data()
-
-        return dataiter, math.ceil(len(train_data)/self.cfg.batch_size/self.cfg.num_gpus)
+    # def _make_data(self):
+    #     from dataset import Dataset
+    #     from gen_batch import generate_batch
+    #
+    #     d = Dataset()
+    #     train_data = d.load_train_data()
+    #
+    #     from tfflat.data_provider import DataFromList, MultiProcessMapDataZMQ, BatchData, MapData
+    #     self.data_load_thread = DataFromList(train_data)
+    #     if self.cfg.multi_thread_enable:
+    #         data_load_thread = MultiProcessMapDataZMQ(self.data_load_thread, self.cfg.num_thread, generate_batch, strict=True)
+    #     else:
+    #         data_load_thread = MapData(self.data_load_thread, generate_batch)
+    #     data_load_thread = BatchData(data_load_thread, self.cfg.batch_size)
+    #
+    #     self.data_load_thread.reset_state()
+    #     dataiter = data_load_thread.get_data()
+    #
+    #     return dataiter, math.ceil(len(train_data)/self.cfg.batch_size/self.cfg.num_gpus)
 
     def _make_graph(self):
 
@@ -374,15 +378,16 @@ class Trainer(Base):
                 train_saver = Saver(sess, tf.global_variables(), model_dump_dir)
 
                 best_model_dir = os.path.join(model_dump_dir,"best_model")
+                val_dir = os.path.join(self.cfg.val_dir,run_pref)
                 if not os.path.isdir(best_model_dir):
                     os.makedirs(best_model_dir)
+                    os.makedirs(val_dir)
 
                 best_saver = Saver(sess,tf.global_variables(),best_model_dir,max_to_keep=1)
 
                 # initialize weights
                 self.logger.info('Initialize all variables ...')
                 sess.run(tf.variables_initializer(tf.global_variables(), name='init'))
-                #fixme add here the actual cross val number. That number has to be configured via command line if intending to load continue train
                 self.load_weights('last_epoch' if self.cfg.continue_train else self.cfg.init_model,model_dump_dir,sess=sess)
 
                 self.logger.info('Start training; validation iteration #{}...'.format(out_itr))
@@ -454,9 +459,92 @@ class Trainer(Base):
             if self.cfg.multi_thread_enable:
                 data_thread.__del__()
             print("Finish training for val run #{}; Apply validation".format(out_itr + 1))
-           # test(self.cfg.end_epoch + 1)
+            self.cross_val(val_data,self.cfg.end_epoch + 1,val_dir,best_model_dir)
 
 
+    def cross_val(self,val_data,val_model,val_dir,model_dir):
+        """
+        This function applies cross validation to a trained model after one complete trainind and stores the result
+        :param val_data: The validation split of the overall data set that has not been seen before
+        :param val_model: The checkpoint number that's to be used for the evaluation
+        :param val_dir: The directory to store the validation results to
+        :param model_dir: The directory where the loaded model for eval can be found
+        :return:
+        """
+
+        #validation data contains also bounding boxes
+        dets = val_data
+        dets.sort(key=lambda x: (x['image_id']))
+
+        # store val data as json in order to be able to read it with COCO
+        val_gt_path = osp.join(val_dir,"val_kp_gt.json")
+        with open(val_gt_path,"w") as f:
+            json.dump(val_data,f)
+
+        coco = COCO(self.d.train_annot_path)
+        # construct coco object for evaluation
+        val_gt = self.construct_coco(val_data,coco,val_gt_path,val_dir)
+
+        # from tfflat.mp_utils import MultiProc
+        from test import test_net
+        from model import Model
+        img_start = 0
+        ranges = [0]
+        img_num = len(np.unique([i['image_id'] for i in dets]))
+        images_per_gpu = int(img_num / len(self.cfg.gpu_ids.split(','))) + 1
+        for run_img in range(img_num):
+            img_end = img_start + 1
+            while img_end < len(dets) and dets[img_end]['image_id'] == dets[img_start]['image_id']:
+                img_end += 1
+            if (run_img + 1) % images_per_gpu == 0 or (run_img + 1) == img_num:
+                ranges.append(img_end)
+            img_start = img_end
+
+        def func(gpu_id):
+            tester = Tester(Model(), self.cfg)
+            tester.load_weights(val_model,model_dump_dir=model_dir)
+            range = [ranges[gpu_id], ranges[gpu_id + 1]]
+            return test_net(tester, dets, range, gpu_id, self.d.sigmas,False)
+
+        # MultiGPUFunc = MultiProc(len(self.cfg.gpu_ids.split(',')), func)
+        # result = MultiGPUFunc.work()
+        result = func(0)
+        # evaluation
+        self.d.evaluation(result, val_gt, val_dir, self.cfg.testset)
+
+        # clean up
+        tf.reset_default_graph()
+
+
+    def construct_coco(self,data,base_coco,res_file,val_dir):
+        """
+        Construct a COCO object from a data list
+        :param data:
+        :return:
+        """
+
+        res = COCO()
+        img_file_names = [p["imgpath"] for p in data]
+        res.dataset['images'] = [img for img in base_coco.dataset['images'] if img['file_name'] in img_file_names]
+        print('Loading and preparing results...')
+        with open(res_file) as f:
+            anns = json.load(f)
+
+        assert type(anns) == list, 'results in not an array of objects'
+
+        res.dataset['categories'] = copy.deepcopy(
+            base_coco.dataset['categories'])
+
+        ann_ids = [ann["id"] for ann in anns]
+        gt_anno_file_path = osp.join(val_dir, "gt_anno.json")
+        res.dataset['annotations'] = [ann for ann in base_coco.dataset["annotations"] if ann["id"] in ann_ids]
+        res.createIndex()
+
+        with open(gt_anno_file_path,"w") as f:
+            json.dump(res.dataset,f)
+
+        res.anno_file=[gt_anno_file_path]
+        return res
 
 class Tester(Base):
     def __init__(self, net, cfg, data_iter=None):
