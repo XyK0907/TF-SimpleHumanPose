@@ -36,8 +36,12 @@ class colorlogger():
     def debug(self, msg):
         self._logger.debug(str(msg))
 
-    def info(self, msg):
-        self._logger.info(str(msg))
+    def info(self, msg, silence = False):
+
+        if silence:
+            print(msg)
+        else:
+            self._logger.info(msg)
 
     def warning(self, msg):
         self._logger.warning(WARNING + 'WRN: ' + str(msg) + END)

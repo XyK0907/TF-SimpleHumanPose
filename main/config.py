@@ -8,17 +8,25 @@ class Config:
     ## dataset
     dataset = 'JTA' # 'COCO', 'PoseTrack', 'MPII'
     testset = 'test' # train, test, val (there is no validation set for MPII)
-    # additional_name = 'SyMPose_urban2worldexpo_standard_cyclegan_bs1_gfdim32_dfdim64_start2019-06-13-19-54-19'
     # additional_name = 'SyMPose_urban2iosb_standard_cyclegan_bs1_gfdim32_dfdim64_start2019-06-14-19-40-54_cval'
-    # additional_name = "SyMPose_urban2iosb_standard_cyclegan_bs1_gfdim32_dfdim64_start2019-06-17-09-11-54"
+    # additional_name = 'SyMPose_urban2worldexpo_standard_cyclegan_bs1_gfdim32_dfdim64_start2019-06-13-19-54-19_cval_dist_filt_1'
+    # additional_name = 'SyMPose_urban2iosb_standard_cyclegan_bs1_gfdim32_dfdim64_start2019-06-14-19-40-54_cval_dist_filt_1'
+    # additional_name = 'SyMPose_urban2cityscapes_standard_cyclegan_bs1_gfdim32_dfdim64_start2019-06-14-13-18-27_cval_dist_filt_1'
+    # additional_name = "SyMPose_urban2cityscapes_standard_cyclegan_bs1_gfdim32_dfdim64_start2019-06-11-11-37-08"
     # additional_name = 'SyMPose_urban2iosb_spade_cyclegan_bs1_gfdim32_dfdim64_start2019-06-13-12-16-01'
-    # additional_name = "SyMPose_urban2worldexpo_lr_sched_standard_cyclegan_bs1_gfdim32_dfdim64_start2019-06-13-19-54-19"
+    # additional_name = "SyMPose_urban2worldexpo_standard_cyclegan_bs1_gfdim32_dfdim64_start2019-06-13-19-54-19_cval_dist_filt"
     # additional_name = "SyMPose_urban2worldexpo_spade_cyclegan_bs1_gfdim32_dfdim64_start2019-06-13-09-47-28"
-    additional_name = 'SyMPose_urban2cityscapes_standard_cyclegan_bs1_gfdim32_dfdim64_start2019-06-17-09-16-34_cval'
-    # additional_name = 'SyMPose_urban_cval'
-    # additional_name = "SyMPose_urban2worldexpo_standard_cyclegan_bs1_gfdim32_dfdim64_start2019-06-13-19-54-19"
+    # additional_name = 'SyMPose_urban2iosb_standard_cyclegan_bs1_gfdim32_dfdim64_start2019-06-14-19-40-54_cval'
+    # additional_name = "SyMPose_urban2iosb_spade_cyclegan_bs1_gfdim32_dfdim64_start2019-06-13-12-16-01"
+    # additional_name = 'SyMPose_urban2iosb_standard_cyclegan_bs1_gfdim32_dfdim64_start2019-06-14-19-40-54_full'
+    # additional_name = "SyMPose_urban2cityscapes_standard_cyclegan_bs1_gfdim32_dfdim64_start2019-06-14-13-18-27_cval_dist_filt_1"
     # additional_name="SyMPose2X_test"
     # additional_name = "SyMPose"
+    # additional_name = "SyMPose_urban2worldexpo_standard_cyclegan_bs1_gfdim32_dfdim64_start2019-06-13-19-54-19_cval_dist_filt_1"
+    additional_name = "blended_synth_worldexpo_1"
+    # additional_name = "SyMPose_urban2cityscapes_standard_cyclegan_bs1_gfdim32_dfdim64_start2019-06-14-13-18-27_cval_dist_filt_1"
+    # additional_name = "SyMPose_urban2iosb_standard_cyclegan_bs1_gfdim32_dfdim64_start2019-06-18-13-17-45"
+
 
     ## directory
     cur_dir = osp.dirname(os.path.abspath(__file__))
@@ -78,7 +86,7 @@ class Config:
     gpu_ids = '0'
     num_gpus = 1
     continue_train = False
-    display = 1
+    display = 10000
     
     ## helper functions
     def get_lr(self, epoch):

@@ -224,26 +224,6 @@ class Trainer(Base):
         if self.cfg.cnt_val_itr >= self.d.num_val_split:
             raise ValueError("The validation iteration to continue is larger than overall number of cross-validation runs!")
 
-    # def _make_data(self):
-    #     from dataset import Dataset
-    #     from gen_batch import generate_batch
-    #
-    #     d = Dataset()
-    #     train_data = d.load_train_data()
-    #
-    #     from tfflat.data_provider import DataFromList, MultiProcessMapDataZMQ, BatchData, MapData
-    #     self.data_load_thread = DataFromList(train_data)
-    #     if self.cfg.multi_thread_enable:
-    #         data_load_thread = MultiProcessMapDataZMQ(self.data_load_thread, self.cfg.num_thread, generate_batch, strict=True)
-    #     else:
-    #         data_load_thread = MapData(self.data_load_thread, generate_batch)
-    #     data_load_thread = BatchData(data_load_thread, self.cfg.batch_size)
-    #
-    #     self.data_load_thread.reset_state()
-    #     dataiter = data_load_thread.get_data()
-    #
-    #     return dataiter, math.ceil(len(train_data)/self.cfg.batch_size/self.cfg.num_gpus)
-
     def _make_graph(self):
 
         assert self._optimizer is not None
@@ -381,6 +361,8 @@ class Trainer(Base):
                 val_dir = os.path.join(self.cfg.val_dir,run_pref)
                 if not os.path.isdir(best_model_dir):
                     os.makedirs(best_model_dir)
+
+                if not os.path.isdir(val_dir):
                     os.makedirs(val_dir)
 
                 best_saver = Saver(sess,tf.global_variables(),best_model_dir,max_to_keep=1)
@@ -459,7 +441,10 @@ class Trainer(Base):
             if self.cfg.multi_thread_enable:
                 data_thread.__del__()
             print("Finish training for val run #{}; Apply validation".format(out_itr + 1))
-            self.cross_val(val_data,self.cfg.end_epoch + 1,val_dir,best_model_dir)
+            if self.cfg.additional_name=="CrowdPose":
+                print("Training on CrowdPose, no additional validation required!")
+            else:
+                self.cross_val(val_data,self.cfg.end_epoch + 1,val_dir,best_model_dir)
 
 
     def cross_val(self,val_data,val_model,val_dir,model_dir):
@@ -512,9 +497,12 @@ class Trainer(Base):
         # evaluation
         self.d.evaluation(result, val_gt, val_dir, self.cfg.testset)
 
-        # clean up
+        # remove tensorflow graph to be able to start next training
         tf.reset_default_graph()
 
+        # clean up hard disk
+        os.remove(val_gt.anno_file[0])
+        os.remove(val_gt_path)
 
     def construct_coco(self,data,base_coco,res_file,val_dir):
         """

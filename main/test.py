@@ -4,14 +4,12 @@ import numpy as np
 import argparse
 from config import cfg
 import cv2
-import sys
 import time
 import json
-from PIL import Image
-import matplotlib.pyplot as plt
-import pickle
 from tqdm import tqdm
 import math
+from glob import glob
+import pandas as pd
 
 import tensorflow as tf
 
@@ -173,75 +171,202 @@ def test_net(tester, dets, det_range, gpu_id,sigmas,vis_kps):
             #                   keypoints=kps_result[i].round(3).tolist())
             dump_results.append(result)
 
+
     return dump_results
 
 
-def test(test_model,vis_kps,run_nr):
-    
-    # annotation load
-    d = Dataset(train=False)
-    annot = d.load_annot(cfg.testset)
-    gt_img_id = d.load_imgid(annot)
-    model_dump_dir = osp.join(cfg.model_dump_dir,"run_{}".format(run_nr))
+def test(test_model,vis_kps,run_nr,make_stats,gpu_id):
+    cfg.set_args(gpu_id)
+    if make_stats:
 
-    assert osp.isdir(model_dump_dir)
-    
-    # human bbox load
-    if cfg.useGTbbox and cfg.testset in ['train', 'val']:
-        if cfg.testset == 'train':
-            dets = d.load_test_data(score=True)
+        base_log_dir = cfg.log_dir
+        # due to cocoeval format for keypoints
+        index = np.asarray([0,1,2,5,6,7,8,9,10],dtype=np.int32)
+        header = ["AP@[IoU=0.5:0.95]",
+                  "AP@[IoU=0.5]",
+                  "AP@[IoU=0.75]",
+                  "AR@[IoU=0.5:0.95]",
+                  "AR@[IoU=0.5]",
+                  "AR@[IoU=0.75]",
+                  "AP@[IoU=0.5:0.95,easy]",
+                  "AP@[IoU=0.5:0.95,medium]",
+                  "AP@[IoU=0.5:0.95,hard]"]
+
+
+        available_runs = glob(os.path.join(cfg.model_dump_dir,"run_*"))
+
+        if not all([os.path.isdir(run) for run in available_runs]):
+            print("Not all subdirs are valid dirs, exit.")
+            exit(0)
+
+        print("Found {} runs. Appply testing on all.".format(len(available_runs)))
+
+        results = np.zeros([len(available_runs),index.shape[0]])
+        for nr,run in enumerate(available_runs):
+
+            eval_dir = osp.join(cfg.result_dir, "run_{}".format(nr+1))
+            if not osp.isdir(eval_dir):
+                os.makedirs(eval_dir)
+
+            snapshots = glob(osp.join(run,"snapshot_*.ckpt.*"))
+
+            nr_snapshots = len(snapshots) // 3
+
+            stats = np.zeros([nr_snapshots,index.shape[0]])
+
+            sn_index = ["@ckpt#{}".format(n+1) for n in range(nr_snapshots)]
+
+            for sn_nr in range(nr_snapshots):
+                # annotation load
+                d = Dataset(train=False)
+                annot = d.load_annot(cfg.testset)
+                gt_img_id = d.load_imgid(annot)
+                cfg.log_dir = osp.join(base_log_dir,"eval","run_{}".format(nr+1),"sn_{}".format(sn_nr+1))
+
+                if not osp.isdir(cfg.log_dir):
+                    os.makedirs(cfg.log_dir)
+
+                # human bbox load
+                if cfg.useGTbbox and cfg.testset in ['train', 'val']:
+                    if cfg.testset == 'train':
+                        dets = d.load_test_data(score=True)
+                    else:
+                        dets = d.load_val_data_with_annot()
+                    dets.sort(key=lambda x: (x['image_id']))
+                else:
+                    with open(cfg.human_det_path, 'r') as f:
+                        dets = json.load(f)
+                    dets = [i for i in dets if i['image_id'] in gt_img_id]
+                    dets = [i for i in dets if i['category_id'] == 1]
+                    dets = [i for i in dets if i['score'] > 0]
+                    dets.sort(key=lambda x: (x['image_id'], x['score']), reverse=True)
+
+                    img_id = []
+                    for i in dets:
+                        img_id.append(i['image_id'])
+                    imgname = d.imgid_to_imgname(annot, img_id, cfg.testset)
+                    for i in range(len(dets)):
+                        dets[i]['imgpath'] = imgname[i]
+
+                det_range = [0, len(dets)]
+
+
+                tester = Tester(Model(), cfg)
+                tester.load_weights(sn_nr+1, model_dump_dir=run)
+                result = test_net(tester, dets, det_range, int(gpu_id), d.sigmas, vis_kps)
+
+
+                tester.sess.close()
+                tf.reset_default_graph()
+
+                del tester
+
+                # result = func(gpu_id)
+                # evaluation
+                cocoeval = d.evaluation_stats(result, annot, eval_dir)
+
+                stats[sn_nr,:] = cocoeval.stats[index]
+
+                print("Finished! Actual stats are:")
+                print(cocoeval.stats[index])
+
+                del d
+
+
+            # get best result with respect to ap 0.5:0.95
+            best_id = np.argmax(stats[:,0])
+            results[nr,:] = stats[best_id,:]
+
+            # store actual results to csv
+            df = pd.DataFrame(data=stats,columns=header,index=sn_index)
+            df.to_csv(osp.join(eval_dir,"stats_all.csv"),index=True)
+
+        # add f1-score computation
+        header +=["F1@[IoU=0.5:0.95]"]
+        #compute f1-scores for every run
+        f1_scores = 2*(results[:,0]*results[:,3])/(results[:,0]+results[:,3])
+        f1_scores = np.expand_dims(f1_scores,axis=1)
+        results = np.concatenate([results,f1_scores],axis=1)
+
+        # compute stats and store to csv file
+        mean = np.mean(results,axis=0)
+        if len(available_runs)<2:
+            std = np.zeros_like(mean,dtype=np.float)
         else:
-            dets = d.load_val_data_with_annot()
-        dets.sort(key=lambda x: (x['image_id']))
+            # compute unbiased variant of std, as the number of samples is not large
+            std = np.std(results,axis=0,ddof=1)
+        best = results[np.argmax(results[:,0]),:]
+        out = np.stack([best,mean,std],axis=1)
+        out=out.transpose()
+        out_df = pd.DataFrame(data=out,columns=header,index=["best","mean","stddev"])
+        out_df.to_csv(osp.join(cfg.result_dir,"results_final.csv"),index=True)
+
+
+        #store all results
+        run_idx = ["run_{}".format(r+1) for r in range(len(available_runs))]
+        all_df = pd.DataFrame(data=results,columns=header,index=run_idx)
+        all_df.to_csv(osp.join(cfg.result_dir,"results_list.csv"),index=True)
+
+        # store final results
+        header.append(["mean",""])
+
+
+
+
     else:
-        with open(cfg.human_det_path, 'r') as f:
-            dets = json.load(f)
-        dets = [i for i in dets if i['image_id'] in gt_img_id]
-        dets = [i for i in dets if i['category_id'] == 1]
-        dets = [i for i in dets if i['score'] > 0]
-        dets.sort(key=lambda x: (x['image_id'], x['score']), reverse=True)
-    
-        img_id = []
-        for i in dets:
-            img_id.append(i['image_id'])
-        imgname = d.imgid_to_imgname(annot, img_id, cfg.testset)
-        for i in range(len(dets)):
-            dets[i]['imgpath'] = imgname[i]
 
-    # job assign (multi-gpu)
-    from tfflat.mp_utils import MultiProc
-    img_start = 0
-    ranges = [0]
-    img_num = len(np.unique([i['image_id'] for i in dets]))
-    images_per_gpu = int(img_num / len(args.gpu_ids.split(','))) + 1
-    for run_img in range(img_num):
-        img_end = img_start + 1
-        while img_end < len(dets) and dets[img_end]['image_id'] == dets[img_start]['image_id']:
-            img_end += 1
-        if (run_img + 1) % images_per_gpu == 0 or (run_img + 1) == img_num:
-            ranges.append(img_end)
-        img_start = img_end
+        # annotation load
+        d = Dataset(train=False)
+        annot = d.load_annot(cfg.testset)
+        gt_img_id = d.load_imgid(annot)
 
-    def func(gpu_id):
-        cfg.set_args(args.gpu_ids.split(',')[gpu_id])
+        # human bbox load
+        if cfg.useGTbbox and cfg.testset in ['train', 'val']:
+            if cfg.testset == 'train':
+                dets = d.load_test_data(score=True)
+            else:
+                dets = d.load_val_data_with_annot()
+            dets.sort(key=lambda x: (x['image_id']))
+        else:
+            with open(cfg.human_det_path, 'r') as f:
+                dets = json.load(f)
+            dets = [i for i in dets if i['image_id'] in gt_img_id]
+            dets = [i for i in dets if i['category_id'] == 1]
+            dets = [i for i in dets if i['score'] > 0]
+            dets.sort(key=lambda x: (x['image_id'], x['score']), reverse=True)
+
+            img_id = []
+            for i in dets:
+                img_id.append(i['image_id'])
+            imgname = d.imgid_to_imgname(annot, img_id, cfg.testset)
+            for i in range(len(dets)):
+                dets[i]['imgpath'] = imgname[i]
+
+        det_range = [0, len(dets)]
+
+        model_dump_dir = osp.join(cfg.model_dump_dir, "run_{}".format(run_nr))
+
+        assert osp.isdir(model_dump_dir)
+        # evaluation
+        cfg.set_args(gpu_id)
         tester = Tester(Model(), cfg)
         tester.load_weights(test_model,model_dump_dir=model_dump_dir)
-        range = [ranges[gpu_id], ranges[gpu_id + 1]]
-        return test_net(tester, dets, range, gpu_id,d.sigmas,vis_kps)
+        result = test_net(tester, dets, det_range, int(gpu_id),d.sigmas,vis_kps)
 
-    MultiGPUFunc = MultiProc(len(args.gpu_ids.split(',')), func)
-    result = MultiGPUFunc.work()
+        eval_dir = osp.join(cfg.result_dir,"run_{}".format(run_nr))
+        if not osp.isdir(eval_dir):
+            os.makedirs(eval_dir)
 
-    # evaluation
-    d.evaluation(result, annot, cfg.result_dir, cfg.testset)
+        d.evaluation(result, annot, eval_dir, cfg.testset)
 
 if __name__ == '__main__':
     def parse_args():
         parser = argparse.ArgumentParser()
         parser.add_argument('--gpu', type=str, dest='gpu_ids')
-        parser.add_argument('--test_epoch', type=str, dest='test_epoch')
+        parser.add_argument('--test_epoch', type=str, dest='test_epoch',default="15")
         parser.add_argument("--vis",dest='vis_kps', action='store_true')
         parser.add_argument("--run_nr",type=int,default=1,dest="run_nr")
+        parser.add_argument("--stats",dest="stats",action="store_true")
         args = parser.parse_args()
 
         # test gpus
@@ -259,4 +384,4 @@ if __name__ == '__main__':
 
     global args
     args = parse_args()
-    test(int(args.test_epoch),args.vis_kps,args.run_nr)
+    test(int(args.test_epoch),args.vis_kps,args.run_nr,args.stats,args.gpu_ids)
