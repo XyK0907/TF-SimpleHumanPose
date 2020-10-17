@@ -21,9 +21,9 @@ class Config:
     # additional_name = 'SyMPose_urban2iosb_standard_cyclegan_bs1_gfdim32_dfdim64_start2019-06-14-19-40-54_full'
     # additional_name = "SyMPose_urban2cityscapes_standard_cyclegan_bs1_gfdim32_dfdim64_start2019-06-14-13-18-27_cval_dist_filt_1"
     # additional_name="SyMPose2X_test"
-    # additional_name = "SyMPose"
+    additional_name = "SyMPose_IOSB_CrowdPose"
     # additional_name = "SyMPose_urban2worldexpo_standard_cyclegan_bs1_gfdim32_dfdim64_start2019-06-13-19-54-19_cval_dist_filt_1"
-    additional_name = "blended_synth_worldexpo_1"
+    # additional_name = "blended_synth_worldexpo_1"
     # additional_name = "SyMPose_urban2cityscapes_standard_cyclegan_bs1_gfdim32_dfdim64_start2019-06-14-13-18-27_cval_dist_filt_1"
     # additional_name = "SyMPose_urban2iosb_standard_cyclegan_bs1_gfdim32_dfdim64_start2019-06-18-13-17-45"
 
@@ -32,7 +32,8 @@ class Config:
     cur_dir = osp.dirname(os.path.abspath(__file__))
     root_dir = osp.join(cur_dir, '..')
     data_dir = osp.join(root_dir, 'data')
-    output_dir = '/net/merkur/storage/deeplearning/users/blaand/data/jta_to_real/detection'
+    output_dir = '/home/ies/kong/TF-SimpleHumanPose/detection/'
+    # output_dir = '/net/merkur/storage/deeplearning/users/blaand/data/jta_to_real/detection'
     # output_dir = osp.join(root_dir, 'output')
     model_dump_dir = osp.join(output_dir, 'model_dump', dataset,additional_name)
     vis_dir = osp.join(output_dir, 'vis', dataset,additional_name)
