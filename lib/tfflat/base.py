@@ -180,7 +180,7 @@ class Base(object):
             else:
                 self.logger.critical('No snapshot model exists.')
 
-                # model = self.cfg.init_model
+                model = self.cfg.init_model
                 return
 
         if isinstance(model, int):
@@ -376,7 +376,7 @@ class Trainer(Base):
                 sess.run(tf.variables_initializer(tf.global_variables(), name='init'))
                 self.load_weights('last_epoch' if self.cfg.continue_train else self.cfg.init_model,model_dump_dir,sess=sess)
 
-                # self.cfg.continue_train = False
+                self.cfg.continue_train = False
 
                 self.logger.info('Start training; validation iteration #{}...'.format(out_itr))
                 start_itr = self.cur_epoch * itr_per_epoch + 1
