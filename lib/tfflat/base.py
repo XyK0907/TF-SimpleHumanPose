@@ -4,6 +4,7 @@ import numpy as np
 from collections import OrderedDict as dict
 import setproctitle
 import os
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
 import os.path as osp
 import glob
 import abc
@@ -178,6 +179,8 @@ class Base(object):
                 model = sfiles[-1]
             else:
                 self.logger.critical('No snapshot model exists.')
+
+                # model = self.cfg.init_model
                 return
 
         if isinstance(model, int):
@@ -313,7 +316,8 @@ class Trainer(Base):
             lr_eval = self.cfg.lr
             save_summary_steps = self.cfg.save_summary_steps
             summary_dir = os.path.join(self.cfg.summary_dir, run_pref)
-            train_data, val_data = self.d.load_train_data(out_itr)
+            # train_data, val_data = self.d.load_train_data(out_itr)
+            train_data, val_data = self.d.load_train_data()
 
 
 
@@ -372,6 +376,8 @@ class Trainer(Base):
                 sess.run(tf.variables_initializer(tf.global_variables(), name='init'))
                 self.load_weights('last_epoch' if self.cfg.continue_train else self.cfg.init_model,model_dump_dir,sess=sess)
 
+                # self.cfg.continue_train = False
+
                 self.logger.info('Start training; validation iteration #{}...'.format(out_itr))
                 start_itr = self.cur_epoch * itr_per_epoch + 1
                 end_itr = itr_per_epoch * self.cfg.end_epoch + 1
@@ -424,6 +430,7 @@ class Trainer(Base):
 
                     # save best model
                     loss = itr_summary['loss']
+                    # print('current loss is:', loss, 'best loss is:', best_loss)
                     if loss < best_loss:
                         best_loss = loss
                         print("Saving model because best loss was undergone; Value is {}.".format(loss))
@@ -464,7 +471,7 @@ class Trainer(Base):
         # store val data as json in order to be able to read it with COCO
         val_gt_path = osp.join(val_dir,"val_kp_gt.json")
         with open(val_gt_path,"w") as f:
-            json.dump(val_data,f)
+            json.dump(val_data,f, cls=NpEncoder)
 
         coco = COCO(self.d.train_annot_path)
         # construct coco object for evaluation
@@ -489,7 +496,7 @@ class Trainer(Base):
             tester = Tester(Model(), self.cfg)
             tester.load_weights(val_model,model_dump_dir=model_dir)
             range = [ranges[gpu_id], ranges[gpu_id + 1]]
-            return test_net(tester, dets, range, gpu_id, self.d.sigmas,False)
+            return test_net(tester, dets, range, gpu_id, self.d.sigmas, False)
 
         # MultiGPUFunc = MultiProc(len(self.cfg.gpu_ids.split(',')), func)
         # result = MultiGPUFunc.work()
@@ -564,8 +571,8 @@ class Tester(Base):
                     left_batches = total_batches - len(batch_data[i])
                     if left_batches > 0:
                         batch_data[i] = np.append(batch_data[i], np.zeros((left_batches, *batch_data[i].shape[1:])), axis=0)
-                        self.logger.warning("Fill some blanks to fit batch_size which wastes %d%% computation" % (
-                            left_batches * 100. / total_batches))
+                        # self.logger.warning("Fill some blanks to fit batch_size which wastes %d%% computation" % (
+                        #     left_batches * 100. / total_batches))
             else:
                 assert self.cfg.batch_size * self.cfg.num_gpus == len(batch_data[0]), \
                     "Input batch doesn't fit placeholder batch."
@@ -630,3 +637,13 @@ class Tester(Base):
     def test(self):
         pass
 
+class NpEncoder(json.JSONEncoder):
+    def default(self, obj):
+        if isinstance(obj, np.integer):
+            return int(obj)
+        elif isinstance(obj, np.floating):
+            return float(obj)
+        elif isinstance(obj, np.ndarray):
+            return obj.tolist()
+        else:
+            return super(NpEncoder, self).default(obj)

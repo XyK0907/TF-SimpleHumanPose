@@ -37,7 +37,7 @@ def test_net(tester, dets, det_range, gpu_id,sigmas,vis_kps):
         im_info = dets[img_start]
         while img_end < det_range[1] and dets[img_end]['image_id'] == im_info['image_id']:
             img_end += 1
-        
+
         # all human detection results of a certain image
         cropped_data = dets[img_start:img_end]
 
@@ -51,7 +51,7 @@ def test_net(tester, dets, det_range, gpu_id,sigmas,vis_kps):
         for batch_id in range(0, len(cropped_data), cfg.test_batch_size):
             start_id = batch_id
             end_id = min(len(cropped_data), batch_id + cfg.test_batch_size)
-             
+
             imgs = []
             crop_infos = []
             for i in range(start_id, end_id):
@@ -60,14 +60,14 @@ def test_net(tester, dets, det_range, gpu_id,sigmas,vis_kps):
                 crop_infos.append(crop_info)
             imgs = np.array(imgs)
             crop_infos = np.array(crop_infos)
-            
+
             # forward
             heatmap = tester.predict_one([imgs])[0]
-            
+
             if cfg.flip_test:
                 flip_imgs = imgs[:, :, ::-1, :]
                 flip_heatmap = tester.predict_one([flip_imgs])[0]
-               
+
                 flip_heatmap = flip_heatmap[:, :, ::-1, :]
                 for (q, w) in cfg.kps_symmetry:
                     flip_heatmap_w, flip_heatmap_q = flip_heatmap[:,:,:,w].copy(), flip_heatmap[:,:,:,q].copy()
@@ -75,15 +75,15 @@ def test_net(tester, dets, det_range, gpu_id,sigmas,vis_kps):
                 flip_heatmap[:,:,1:,:] = flip_heatmap.copy()[:,:,0:-1,:]
                 heatmap += flip_heatmap
                 heatmap /= 2
-            
+
             # for each human detection from clustered batch
             for image_id in range(start_id, end_id):
-               
+
                 for j in range(cfg.num_kps):
                     hm_j = heatmap[image_id - start_id, :, :, j]
                     idx = hm_j.argmax()
                     y, x = np.unravel_index(idx, hm_j.shape)
-                    
+
                     px = int(math.floor(x + 0.5))
                     py = int(math.floor(y + 0.5))
                     if 1 < px < cfg.output_shape[1]-1 and 1 < py < cfg.output_shape[0]-1:
@@ -93,7 +93,7 @@ def test_net(tester, dets, det_range, gpu_id,sigmas,vis_kps):
                         x += diff[0] * .25
                         y += diff[1] * .25
                     kps_result[image_id, j, :2] = (x * cfg.input_shape[1] / cfg.output_shape[1], y * cfg.input_shape[0] / cfg.output_shape[0])
-                    kps_result[image_id, j, 2] = hm_j.max() / 255 
+                    kps_result[image_id, j, 2] = hm_j.max() / 255
 
                 vis=False
                 crop_info = crop_infos[image_id - start_id,:]
@@ -116,9 +116,9 @@ def test_net(tester, dets, det_range, gpu_id,sigmas,vis_kps):
                     crop_infos[image_id - start_id][2] - crop_infos[image_id - start_id][0]) + crop_infos[image_id - start_id][0]
                     kps_result[image_id, j, 1] = kps_result[image_id, j, 1] / cfg.input_shape[0] * (\
                     crop_infos[image_id - start_id][3] - crop_infos[image_id - start_id][1]) + crop_infos[image_id - start_id][1]
-                
+
                 area_save[image_id] = (crop_infos[image_id - start_id][2] - crop_infos[image_id - start_id][0]) * (crop_infos[image_id - start_id][3] - crop_infos[image_id - start_id][1])
-                
+
         #vis
         if vis_kps and np.any(kps_result[:,:,2] > 0.8):
             tmpimg = cv2.imread(os.path.join(cfg.img_path, cropped_data[0]['imgpath']))
@@ -130,11 +130,11 @@ def test_net(tester, dets, det_range, gpu_id,sigmas,vis_kps):
                 tmpimg = cfg.vis_keypoints(tmpimg, tmpkps)
             cv2.imwrite(osp.join(cfg.vis_dir, str(img_id2) + '.jpg'), tmpimg)
             img_id2 += 1
-        
+
         score_result = np.copy(kps_result[:, :, 2])
         kps_result[:, :, 2] = 1
         kps_result = kps_result.reshape(-1,cfg.num_kps*3)
-       
+
         # rescoring and oks nms
         if cfg.dataset == 'COCO' or cfg.dataset == 'JTA':
             rescored_score = np.zeros((len(score_result)))
@@ -154,12 +154,12 @@ def test_net(tester, dets, det_range, gpu_id,sigmas,vis_kps):
                 kps_result = kps_result[keep,:]
                 score_result = score_result[keep,:]
                 area_save = area_save[keep]
-        
+
         # save result
         for i in range(len(kps_result)):
             if cfg.dataset == 'COCO' or cfg.dataset == 'JTA':
-                result = dict(image_id=im_info['image_id'], category_id=1, score=float(round(score_result[i], 4)),
-                             keypoints=kps_result[i].round(3).tolist())
+                result = dict(image_id=im_info['image_id'], category_id=1, keypoints=kps_result[i].round(3).tolist(),
+                              score=float(round(score_result[i], 4)))
             elif cfg.dataset == 'PoseTrack':
                 result = dict(image_id=im_info['image_id'], category_id=1, track_id=0, scores=score_result[i].round(4).tolist(),
                               keypoints=kps_result[i].round(3).tolist())
@@ -170,7 +170,8 @@ def test_net(tester, dets, det_range, gpu_id,sigmas,vis_kps):
             #     result = dict(image_id=im_info['image_id'],category_id=1, scores=score_result[i].round(4).tolist(),
             #                   keypoints=kps_result[i].round(3).tolist())
             dump_results.append(result)
-
+    pbar.close()
+    del pbar
 
     return dump_results
 
@@ -309,9 +310,6 @@ def test(test_model,vis_kps,run_nr,make_stats,gpu_id):
 
         # store final results
         header.append(["mean",""])
-
-
-
 
     else:
 

@@ -63,10 +63,12 @@ def get_3rd_point(a, b):
     return b + np.array([-direct[1], direct[0]], dtype=np.float32)
 
 def generate_batch(d, stage='train'):
-    
-    img = cv2.imread(os.path.join(cfg.img_path, d['imgpath']), cv2.IMREAD_COLOR | cv2.IMREAD_IGNORE_ORIENTATION)
+
+    # img = cv2.imread(os.path.join(cfg.img_path, d['imgpath']), cv2.IMREAD_COLOR | cv2.IMREAD_IGNORE_ORIENTATION)
+    img = cv2.imread(os.path.join(cfg.img_path, d['imgpath'][7:]), cv2.IMREAD_COLOR | cv2.IMREAD_IGNORE_ORIENTATION)
     if img is None:
-        print('cannot read ' + os.path.join(cfg.img_path, d['imgpath']))
+        # print('cannot read ' + os.path.join(cfg.img_path, d['imgpath']))
+        print('cannot read ' + os.path.join(cfg.img_path, d['imgpath'][7:]))
         assert 0
 
     bbox = np.array(d['bbox']).astype(np.float32)
